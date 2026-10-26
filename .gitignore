@@ -1,0 +1,13 @@
+# Data is private to the UTokyo team and is not published
+data/
+
+# R / RStudio
+.RData
+.Rhistory
+.Rproj.user/
+*.html
+*_cache/
+*_files/
+
+# macOS
+.DS_Store

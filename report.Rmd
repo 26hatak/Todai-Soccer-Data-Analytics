@@ -1,0 +1,258 @@
+---
+title: "Ashiki_Report"
+author: "Keita Hata"
+date: "7/9/2025"
+output: html_document
+---
+
+```{r}
+library(dplyr)
+library(tidyverse)
+library(psych)
+library(reshape2)
+library(ggplot2)
+library(corrplot)
+source("functions.R")
+```
+
+```{r}
+df<- load_data()
+
+result_cols <- c("goal_diff", "result")
+pass_cols <- c("パス数", "被パス数", "パス成功数","被パス成功数","パス成功率","被パス成功率","ロングパス数","前方パス数","後方パス数","右方向パス数","左方向パス数","前方パス比率","ロングパス比率","ロングパス成功率","同サイド_ロングボール数","同サイド_ロングボール成功率","被ロングパス数","被前方パス数","被後方パス数","被右方向パス数","被左方向パス数","被前方パス比率","被ロングパス比率","被ロングパス成功率","被同サイド_ロングボール数","被同サイド_ロングボール成功率","バイタルで受けた回数","被バイタルで受けた回数","サイドから前へのパス","被サイドから前へのパス","サイドチェンジ回数","味方の横パススピード平均","味方の横パススピード標準偏差","味方の成功横パススピード平均","味方の成功横パススピード標準偏差")
+
+build_up_cols <- c("buildup_回数","buildup_深部から敵陣侵入までの時間_平均.秒.","buildup_深部から敵陣侵入までの時間_標準偏差.秒.",      "buildup_中に刺して奥侵入したビルド数","buildup_同一サイド内での縦パスで奥侵入したビルド数","buildup_両サイド経由で奥侵入したビルド数", "被buildup_回数","被buildup_深部から敵陣侵入までの時間_平均.秒.","被buildup_深部から敵陣侵入までの時間_標準偏差.秒.","被buildup_中に刺して奥侵入したビルド数","被buildup_同一サイド内での縦パスで奥侵入したビルド数","被buildup_両サイド経由で奥侵入したビルド数")
+risk_cols <- c("アタッキングサードでのボールロスト","ミドルサードでのボールロスト","ディフェンシブサードでのボールロスト")
+
+```
+
+creating an index for intent
+
+```{r}
+poss_effect_cols <- c("パス成功率",
+                      "前方パス比率",
+                      "ロングパス比率",
+                      "ロングパス成功率",
+                      "サイドから前へのパス",
+                      "サイドチェンジ回数",
+                      "味方の成功横パススピード標準偏差")  
+
+pass_effect_stats <- df[,poss_effect_cols]
+
+cor(pass_effect_stats)
+
+
+vars <- apply(pass_effect_stats, 2, var)
+pass_effect_stats <- pass_effect_stats[, vars > 1e-5]
+
+cor_matrix <- cor(pass_effect_stats)
+which(abs(cor_matrix) > 0.99 & abs(cor_matrix) < 1, arr.ind = TRUE)
+
+parallel_effect <- fa.parallel(scale(pass_effect_stats), fa = "fa", n.iter = 100)
+
+effect_fa_result <- fa(scale(pass_effect_stats), nfactors = 1, rotate = "varimax", fm = "minres", scores = "regression")
+
+df$poss_effectiveness <- effect_fa_result$scores[,1]
+
+```
+
+
+
+```{r}
+pass_intent_cols <- c("前方パス数",
+                      "後方パス数",
+                      "右方向パス数",
+                      "左方向パス数",
+                      "前方パス比率",
+                      "ロングパス比率",
+                      "サイドから前へのパス",
+                      "サイドチェンジ回数",
+                      "味方の横パススピード平均", 
+                      "buildup_回数", 
+                      "サイドから前へのパス_正規化")
+
+
+pass_intent_stats <- df[, pass_intent_cols]
+
+#Remove any near-zero variance columns
+vars <- apply(pass_intent_stats, 2, var, na.rm = TRUE)
+pass_intent_stats <- pass_intent_stats[, vars > 1e-5]
+
+
+cor_matrix <- cor(pass_intent_stats, use = "complete.obs")
+which(abs(cor_matrix) > 0.99 & abs(cor_matrix) < 1, arr.ind = TRUE)
+
+fa.parallel(scale(pass_intent_stats), fa = "fa", n.iter = 100)
+
+
+intent_fa_result <- fa(scale(pass_intent_stats), nfactors = 1, rotate = "varimax", fm = "minres", scores = "regression")
+
+#Store the score in your dataframe
+df$poss_intent <- intent_fa_result$scores[,1]
+
+
+
+
+
+
+```
+
+```{r}
+df$被ポゼッション率 <- 100 - df[,"ポゼッション率"]
+
+result_metrics <- c("goal_diff",
+                    "xg",
+                    "被xg",
+                    "シュート数",
+                    "被シュート数", 
+                    "PA侵入回数",
+                    "被PA侵入回数",
+                    "デュエル勝率",
+                    "バイタルで受けた回数")
+
+result_stats <- df[, result_metrics]
+
+
+vars <- apply(result_stats, 2, var, na.rm = TRUE)
+result_stats <- result_stats[, vars > 1e-5]
+
+
+fa.parallel(scale(result_stats), fa = "fa", n.iter = 100)
+
+result_fa <- fa(scale(result_stats), nfactors = 1, rotate = "varimax", fm = "minres", scores = "regression")
+
+
+df$result_factor <- result_fa$scores[, 1]
+df$match_label <- paste(df$season, df$対戦相手, sep = " vs ")
+
+
+```
+
+```{r}
+
+
+plot_possession_map(df, "poss_intent", "poss_effectiveness")
+df_2025 <- df %>% filter(df$season == 2025)
+plot_possession_map(df_2025, "poss_intent", "poss_effectiveness")
+df_2024 <- df %>% filter(df$season == 2024)
+plot_possession_map(df_2024, "poss_intent", "poss_effectiveness")
+```
+
+
+
+
+```{r}
+result_stats_scaled <- scale(result_stats)
+
+# Determine optimal number of clusters
+wss <- map_dbl(1:10, ~kmeans(result_stats_scaled, centers = .x, nstart = 25)$tot.withinss)
+plot(1:10, wss, type = "b", main = "エルボー法によるクラスタ数選定", xlab = "クラスタ数", ylab = "WSS")
+
+# Run k-means with optimal k (say, 3 or 4)
+set.seed(123)
+kmeans_result <- kmeans(result_stats_scaled, centers = 4, nstart = 25)
+
+df$match_cluster <- factor(kmeans_result$cluster)
+
+```
+
+```{r}
+
+ggplot(df, aes(x = poss_intent, y = poss_effectiveness, color = match_cluster)) +
+  geom_point(size = 3, alpha = 0.7) +
+  labs(title = "クラスタごとのポゼッションマップ", x = "ポゼッション意図", y = "ポゼッション効果")
+
+cluster_filter <- df %>%
+  group_by(match_cluster) %>%
+  summarise(across(all_of(result_metrics), mean, na.rm = TRUE), n = n())
+
+
+```
+
+```{r}
+
+cor(df$poss_intent, df$result_factor)
+cor(df$poss_intent, df[,result_metrics])
+
+```
+
+```{r}
+
+plot_possession_map(df, "poss_intent", "result_factor")
+plot_possession_map(df, "poss_effectiveness", "result_factor")
+
+```
+
+
+
+```{r}
+
+plot_possession_map(df_2024, "poss_intent", "result_factor")
+plot_possession_map(df_2025, "poss_intent", "result_factor")
+
+```
+
+```{r}
+
+plot_possession_map(df_2024, "poss_effectiveness", "result_factor")
+plot_possession_map(df_2025, "poss_effectiveness", "result_factor")
+
+```
+
+```{r}
+
+
+cluster_vars <- c("poss_intent", "poss_effectiveness", "result_factor")
+cluster_data <- na.omit(df[, cluster_vars])
+scaled_data <- scale(cluster_data)
+
+# k-means on the three factor scores (elbow plot suggested 3-4; 3 used)
+wss <- map_dbl(1:10, ~kmeans(scaled_data, centers = .x, nstart = 25)$tot.withinss)
+plot(1:10, wss, type = "b", xlab = "クラスタ数", ylab = "WSS", main = "Elbow Method")
+set.seed(42)
+poss_kmeans <- kmeans(scaled_data, centers = 3, nstart = 25)
+df$poss_cluster <- NA
+df$poss_cluster[as.numeric(rownames(cluster_data))] <- poss_kmeans$cluster
+df$poss_cluster <- factor(df$poss_cluster)
+
+
+pca_result <- prcomp(scaled_data)
+
+
+scores <- as.data.frame(pca_result$x[, 1:2])
+scores$match_label <- df$match_label[as.numeric(rownames(cluster_data))]
+scores$poss_cluster <- df$poss_cluster[as.numeric(rownames(cluster_data))]
+
+
+loadings <- as.data.frame(pca_result$rotation[, 1:2])
+loadings$var <- rownames(loadings)
+
+
+ggplot(scores, aes(x = PC1, y = PC2, color = poss_cluster, label = match_label)) +
+  geom_point(size = 3, alpha = 0.7) +
+  geom_text(family = "jp", size = 2.5, check_overlap = TRUE, vjust = 1.2, hjust = 0) +
+
+  geom_segment(data = loadings,
+               aes(x = 0, y = 0, xend = PC1 * 2, yend = PC2 * 2),
+               arrow = arrow(length = unit(0.25, "cm")),
+               color = "black",
+               inherit.aes = FALSE) +
+
+  geom_text(data = loadings,
+            aes(x = PC1 * 2.2, y = PC2 * 2.2, label = var),
+            size = 3,
+            family = "jp",
+            inherit.aes = FALSE) +
+
+  labs(
+    title = "poss/result kmeans clustering",
+    x = "PC1",
+    y = "PC2"
+  ) +
+  theme_minimal(base_family = "jp")
+
+df %>%
+  group_by(poss_cluster) %>%
+  summarise(across(all_of(cluster_vars), mean, na.rm = TRUE), .groups = "drop")
+
+```
